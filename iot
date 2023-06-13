@@ -1,0 +1,268 @@
+#include <Keypad.h>
+#include <Wire.h>  // LCD
+#include <LiquidCrystal_I2C.h> // LCD
+#include <TM1637Display.h> // TM1637
+
+// LCD and TM1637 display related
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+#define CLK_PIN 4
+#define DIO_PIN 3
+TM1637Display display(CLK_PIN, DIO_PIN);
+
+const byte ROWS = 4;
+const byte COLS = 4;
+char hexaKeys[ROWS][COLS] = {
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = {13, 12, 11, 10};
+byte colPins[COLS] = {9, 8, 7, 6};
+Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);
+
+int computernumber[3];
+int randNumber;
+int num_count = 0;
+int attemptCount = 0; // 시도 횟수
+unsigned long startTime; // 게임 시작 시간
+
+// Buzzer 설정
+const int buzzerPin = A0;
+// LED 설정
+const int ledPin1 = A1;  // 빨간색 LED
+const int ledPin2 = A2;  // 노란색 LED
+const int ledPin3 = A3;  // 파란색 LED
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  lcd.init(); // LCD 시작
+  lcd.backlight(); // LCD 백라이트 켜기
+
+  // 첫 번째 줄 데이터 제목
+  lcd.setCursor(0, 0); // LCD 1번째 줄에
+  lcd.print("BASEBALL GAME!"); // 제목 출력
+  lcd.setCursor(0, 1); // LCD 2번째 줄에
+  lcd.print("INPUT NUMBERS"); // 출력
+
+  randomSeed(analogRead(0));
+  set_number();
+
+  pinMode(buzzerPin, OUTPUT); // 부저 핀을 출력으로 설정
+  pinMode(ledPin1, OUTPUT); // 빨간색 LED 핀을 출력으로 설정
+  pinMode(ledPin2, OUTPUT); // 노란색 LED 핀을 출력으로 설정
+  pinMode(ledPin3, OUTPUT); // 파란색 LED 핀을 출력으로 설정
+
+  display.setBrightness(7); // 7-segment 디스플레이 밝기 설정
+
+  startTime = millis(); // 게임 시작 시간 초기화
+}
+int GO = 0;
+int num = 0; // 0~999
+int result = 0;
+int st = 0;
+
+void loop() {
+  char customKey = customKeypad.getKey();
+  
+  if (customKey) {
+    if (customKey >= '0' && customKey <= '9') {
+      num = (num * 10) + (int)(customKey - '0');
+      if (num > 999) num = num % 1000;
+
+      String line = "";
+      if (num < 10) line += "0";
+      if (num < 100) line += "0";
+      line += String(num);
+      while (line.length() < 16) line += " ";
+      lcd.setCursor(0, 1);
+      lcd.print(line);
+    }
+    else if (customKey == '#') {
+      int s = 0;
+      int b = 0;
+      for (int i = 0; i < 3; i++) {
+        if (computernumber[i] == num / 100) {
+          if (i == 0) s++;
+          else b++;
+        }
+        if (computernumber[i] == (num / 10) % 10) {
+          if (i == 1) s++;
+          else b++;
+        }
+        if (computernumber[i] == num % 10) {
+          if (i == 2) s++;
+          else b++;
+        }
+      }
+      if (s == 3) {
+        String line = "HOME RUN!!!";
+        while (line.length() < 16) line += " ";
+        lcd.setCursor(0, 1);
+        lcd.print(line);
+        playHomerunSound();
+        digitalWrite(ledPin1, HIGH); // 빨간색 LED 켜기
+        digitalWrite(ledPin2, HIGH); // 노란색 LED 켜기
+        digitalWrite(ledPin3, HIGH); // 파란색 LED 켜기
+        delay(2000);
+        lcd.setCursor(0, 0);
+        lcd.print("WANT RESTART"); 
+        lcd.setCursor(0, 1); 
+        lcd.print("PRESS A KEY");
+        startTime = millis(); // 타이머 리셋
+        st = 0;
+        GO = 1;
+      }
+      else {
+        String line = "[S]=" + String(s) + ", [B]=" + String(b);
+        while (line.length() < 16) line += " ";
+        lcd.setCursor(0, 1);
+        lcd.print(line);
+        attemptCount++; // 시도 횟수 증가
+        if (attemptCount >= 10) {
+          String gameOverLine = "GAME OVER!";
+          while (gameOverLine.length() < 16) gameOverLine += " ";
+          lcd.setCursor(0, 1);
+          lcd.print(gameOverLine);
+          digitalWrite(ledPin1, HIGH); // 빨간색 LED 켜기
+          digitalWrite(ledPin2, LOW); // 노란색 LED 끄기
+          digitalWrite(ledPin3, LOW); // 파란색 LED 끄기
+          playGameOverSound();
+          num = 0; // 입력된 숫자 초기화
+          delay(2000); // 2초 대기
+          lcd.setCursor(0, 0);
+          lcd.print("WANT RESTART"); 
+          lcd.setCursor(0, 1); 
+          lcd.print("PRESS A KEY");
+          GO = 1;
+          startTime = millis(); // 타이머 시간 리셋
+          st = 0; // 타이머작동 해제
+         
+          
+        }
+        else {
+          // 숫자 입력 후 결과에 따라 LED 제어
+          digitalWrite(ledPin1, LOW); // 빨간색 LED 끄기
+          digitalWrite(ledPin2, LOW); // 노란색 LED 끄기
+          digitalWrite(ledPin3, LOW); // 파란색 LED 끄기
+           if (s > 0) {
+            digitalWrite(ledPin2, HIGH); // 노란색 LED 켜기
+          }
+          // 볼일 경우
+          if (b > 0) {
+            digitalWrite(ledPin3, HIGH); // 파란색 LED 켜기
+          }
+        }
+      }
+      num = 0; // 입력된 숫자 초기화
+    }
+  }
+  
+  if((customKey=='B')&&st==0 &&GO==0) { //타이머작동 해제 , 키패드 감지시 , 도전회수 0
+    st = 1;  //타이머작동시작
+    Serial.println(customKey);
+  }
+  if(st==1){
+  unsigned long currentTime = millis();
+  unsigned long elapsedTime = currentTime - startTime;
+  int remainingTime = 41 - (elapsedTime / 1000);
+   display.showNumberDec(remainingTime, false); // 세그먼트 시간초 표시
+  delay(100);
+  
+  if (remainingTime <= 0) { // 시간오버
+    String gameOverLine = "TIME OVER!";
+    while (gameOverLine.length() < 16) gameOverLine += " ";
+    lcd.setCursor(0, 1);
+    lcd.print(gameOverLine);
+    digitalWrite(ledPin1, HIGH); // 빨간색 LED 켜기
+    digitalWrite(ledPin2, LOW); // 노란색 LED 끄기
+    digitalWrite(ledPin3, LOW); // 파란색 LED 끄기
+    playGameOverSound();
+    delay(2000); // 2초 대기
+    lcd.setCursor(0, 0);
+    lcd.print("WANT RESTART"); 
+    lcd.setCursor(0, 1); 
+    lcd.print("PRESS A KEY");
+    startTime = millis(); // 타이머 시간 리셋
+    st = 0; // 타이머 작동 해제
+    GO = 1;
+     }
+  }
+   if((customKey=='A')&&GO == 1){
+    delay(2000);
+    set_number(); // 새로운 게임 시작
+    attemptCount = 0; // 시도 횟수 초기화
+    lcd.setCursor(0, 0); // LCD 1번째 줄에
+    lcd.print("BASEBALL GAME!"); // 제목 출력
+    lcd.setCursor(0, 1); // LCD 2번째 줄에
+    lcd.print("INPUT NUMBERS"); // 출력
+    digitalWrite(ledPin1, LOW); // 빨간색 LED 끄기
+    digitalWrite(ledPin2, LOW); // 노란색 LED 끄기
+    digitalWrite(ledPin3, LOW); // 파란색 LED 끄기
+    delay(1000);
+    GO = 0;
+    startTime = millis(); // 타이머 시간 리셋
+        }
+}
+
+void set_number() {
+  bool isDuplicate;
+  for (int i = 0; i < 3; i++) {
+    do {
+      isDuplicate = false;
+      randNumber = random(0, 10);
+      for (int j = 0; j < i; j++) {
+        if (computernumber[j] == randNumber) {
+          isDuplicate = true;
+          break;
+        }
+      }
+    } while (isDuplicate);
+    computernumber[i] = randNumber;
+    Serial.print(computernumber[i]);
+  }
+  Serial.println();
+}
+
+void playHomerunSound() {
+  tone(buzzerPin, 859, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 984, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 859, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 959, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 1084, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 959, 500); // 솔
+  delay(200);
+  tone(buzzerPin, 1059, 500); // 솔
+  delay(300);
+  tone(buzzerPin, 984, 500); // 솔
+  delay(400);
+  tone(buzzerPin, 1059, 500); // 솔
+  delay(900);
+}
+
+void playGameOverSound() {
+  tone(buzzerPin, 349, 500); // 파
+  delay(200);
+  tone(buzzerPin, 293, 500); // 라
+  delay(200);
+  tone(buzzerPin, 261, 500); // 도
+  delay(200);
+  tone(buzzerPin, 349, 500); // 파
+  delay(200);
+  tone(buzzerPin, 293, 500); // 라
+  delay(200);
+  tone(buzzerPin, 261, 500); // 도
+  delay(200);
+  tone(buzzerPin, 349, 500); // 파
+  delay(200);
+  tone(buzzerPin, 293, 500); // 라
+  delay(200);
+  tone(buzzerPin, 261, 500); // 도
+  delay(200);
+}
